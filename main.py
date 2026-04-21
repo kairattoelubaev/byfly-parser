@@ -4,7 +4,7 @@ import os
 import re
 
 # НАСТРОЙКИ ФИЛЬТРА
-MAX_PRICE = 1000000 
+MAX_PRICE = 700000 
 TARGET_COUNTRIES = ["Вьетнам", "Китай", "Турция"]
 URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62"
 
@@ -17,30 +17,32 @@ def check_tours():
         response = requests.get(URL, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Разбиваем текст на блоки, чтобы имитировать карточки отелей
+        # Разбиваем текст страницы на блоки по разделителю
         raw_text = soup.get_text(separator='|', strip=True)
         parts = raw_text.split('|')
         
         tours_found = []
         
-        # Логика сбора карточки
         for i, text in enumerate(parts):
-            # Ищем страну из списка
+            # Проверяем, есть ли в текущем блоке страна
             if any(country in text for country in TARGET_COUNTRIES):
                 country_info = text
                 
-                # Ищем цену в следующих 5 блоках после страны
+                # Ищем цену в радиусе 5 следующих блоков
                 for j in range(1, 6):
                     if i + j < len(parts):
                         potential_price = parts[i + j]
                         if "тг" in potential_price or "KZT" in potential_price:
+                            # Очищаем цену от пробелов и символов
                             price_val = int(''.join(filter(str.isdigit, potential_price)))
                             
-                            # ФИЛЬТР ПО ЦЕНЕ
+                            # ФИЛЬТРАЦИЯ
                             if price_val <= MAX_PRICE:
-                                # Формируем красивый блок как в вашем примере
-                                # Пытаемся угадать название отеля (обычно перед ценой или страной)
+                                # Название отеля обычно находится ПЕРЕД страной
                                 hotel_name = parts[i-1] if i > 0 else "Отель по ссылке"
+                                
+                                # Если в названии отеля попал мусор, берем саму страну
+                                if len(hotel_name) < 3: hotel_name = country_info
                                 
                                 card = (
                                     f"{country_info}\n"
@@ -52,7 +54,7 @@ def check_tours():
                                 break
 
         if tours_found:
-            # Убираем дубликаты и берем первые 10
+            # Убираем дубликаты
             unique_tours = list(dict.fromkeys(tours_found))[:10]
             
             header = "✈️ **Вылет из Астана (на 2-х взрослых)**\n\n"
@@ -64,7 +66,7 @@ def check_tours():
             final_msg = header + "\n\n".join(unique_tours) + footer
             send_telegram(token, chat_id, final_msg)
         else:
-            print("Отели по заданным критериям не найдены.")
+            print(f"На данный момент туров дешевле {MAX_PRICE} тг не найдено.")
 
     except Exception as e:
         print(f"Ошибка парсинга: {e}")
