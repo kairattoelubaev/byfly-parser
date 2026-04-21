@@ -1,29 +1,28 @@
 import requests
 import os
 
-# Настройки поиска (можете менять под себя)
-MAX_PRICE = 200000  # Максимальная цена в тенге
-TARGET_COUNTRY = "Турция"
-URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62" # Ваша ссылка
+# НАСТРОЙКИ
+MAX_PRICE = 1000000 
+TARGET_COUNTRIES = ["Вьетнам", "Китай", "Турция"]
+URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62"
 
 def check_tours():
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    # Имитируем запрос браузера
     headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(URL, headers=headers)
-    
-    # Здесь логика поиска по тексту страницы (упрощенная)
-    # Если на странице находим цену ниже лимита:
-    found_tours = [] 
-    
-    # Для примера: если в тексте страницы есть цена и страна
-    if TARGET_COUNTRY.lower() in response.text.lower():
-        # Тут должна быть логика извлечения цены (зависит от верстки)
-        # Если нашли подходящий тур:
-        msg = f"🚀 Нашел выгодный тур в {TARGET_COUNTRY} до {MAX_PRICE} тг!\nПроверь тут: {URL}"
-        send_telegram(token, chat_id, msg)
+    try:
+        response = requests.get(URL, headers=headers)
+        page_text = response.text.lower()
+        
+        # Ищем совпадения по странам
+        found = [c for c in TARGET_COUNTRIES if c.lower() in page_text]
+        
+        if found:
+            msg = f"🌟 **Найдены варианты!**\n\n🌍 Страны: {', '.join(found)}\n💰 Бюджет: до {MAX_PRICE} тг\n📍 Вылет: Астана/Алматы\n🔗 Ссылка: {URL}"
+            send_telegram(token, chat_id, msg)
+    except Exception as e:
+        print(f"Ошибка: {e}")
 
 def send_telegram(token, chat_id, text):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
