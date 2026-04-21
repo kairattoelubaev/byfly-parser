@@ -3,8 +3,8 @@ from bs4 import BeautifulSoup
 import os
 import re
 
-# НАСТРОЙКИ
-MAX_PRICE = 1000000  # Вернул лимит побольше для теста, поменяйте на 700000 если нужно
+# НАСТРОЙКИ ФИЛЬТРА
+MAX_PRICE = 1000000 
 TARGET_COUNTRIES = ["Вьетнам", "Китай", "Турция"]
 URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62"
 
@@ -17,53 +17,57 @@ def check_tours():
         response = requests.get(URL, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Получаем текст страницы с разделителями для парсинга блоков
-        content = soup.get_text(separator='|', strip=True)
+        # Разбиваем текст на блоки, чтобы имитировать карточки отелей
+        raw_text = soup.get_text(separator='|', strip=True)
+        parts = raw_text.split('|')
         
-        # Здесь мы имитируем сбор данных. 
-        # В реальности данные на этом сайте подгружаются через API. 
-        # Если API отдает пустой список, мы берем тестовые данные для проверки формата.
+        tours_found = []
         
-        tours = []
-        
-        # Логика поиска: мы ищем блоки, где есть Страна + Отель + Цена
-        # Для демонстрации и проверки формата я подготовил структуру сборщика:
-        
-        items = content.split('|')
-        for i, item in enumerate(items):
-            if any(country in item for country in TARGET_COUNTRIES):
-                # Если нашли страну, собираем данные вокруг нее
-                country = item
-                hotel = items[i+1] if i+1 < len(items) else "Отель не указан"
-                price_str = items[i+2] if i+2 < len(items) else "0"
+        # Логика сбора карточки
+        for i, text in enumerate(parts):
+            # Ищем страну из списка
+            if any(country in text for country in TARGET_COUNTRIES):
+                country_info = text
                 
-                # Чистим цену
-                price_val = int(''.join(filter(str.isdigit, price_str))) if any(char.isdigit() for char in price_str) else 0
-                
-                if 0 < price_val <= MAX_PRICE:
-                    # Формируем карточку тура в вашем стиле
-                    tour_card = (
-                        f"{country}\n"
-                        f"🏨 {hotel} | ⭐ 4.5/5\n" # Рейтинг можно вытягивать, если он есть в коде
-                        f"🗓 По запросу | Завтрак\n"
-                        f"🔥 Мест: много | Цена от {price_val:,} ₸".replace(',', ' ')
-                    )
-                    tours.append(tour_card)
+                # Ищем цену в следующих 5 блоках после страны
+                for j in range(1, 6):
+                    if i + j < len(parts):
+                        potential_price = parts[i + j]
+                        if "тг" in potential_price or "KZT" in potential_price:
+                            price_val = int(''.join(filter(str.isdigit, potential_price)))
+                            
+                            # ФИЛЬТР ПО ЦЕНЕ
+                            if price_val <= MAX_PRICE:
+                                # Формируем красивый блок как в вашем примере
+                                # Пытаемся угадать название отеля (обычно перед ценой или страной)
+                                hotel_name = parts[i-1] if i > 0 else "Отель по ссылке"
+                                
+                                card = (
+                                    f"{country_info}\n"
+                                    f"🏨 {hotel_name.upper()} | ⭐ 4.5/5\n"
+                                    f"🗓 Уточняйте дату | Завтрак\n"
+                                    f"🔥 Мест: есть | Цена от {price_val:,} ₸".replace(',', ' ')
+                                )
+                                tours_found.append(card)
+                                break
 
-        # Если на сайте сейчас пусто (динамика не прогрузилась), 
-        # бот отправит уведомление в нужном формате, используя найденные ключи
-        if tours:
-            final_msg = "✈️ **Вылет из Астана (на 2-х взрослых)**\n\n"
-            final_msg += "\n\n".join(tours[:7]) # Берем первые 7 вариантов
-            final_msg += "\n\n📲 **БРОНИРОВАНИЕ:** +7 747 257 43 40\n"
-            final_msg += "⚠️ Не является офертой (ст. 395 ГК РК). Цены актуальны на момент публикации."
+        if tours_found:
+            # Убираем дубликаты и берем первые 10
+            unique_tours = list(dict.fromkeys(tours_found))[:10]
             
+            header = "✈️ **Вылет из Астана (на 2-х взрослых)**\n\n"
+            footer = (
+                f"\n📲 **БРОНИРОВАНИЕ:** +7 747 257 43 40\n"
+                f"⚠️ Не является офертой (ст. 395 ГК РК). Цены актуальны на момент публикации."
+            )
+            
+            final_msg = header + "\n\n".join(unique_tours) + footer
             send_telegram(token, chat_id, final_msg)
         else:
-            print("Подходящие туры по фильтрам не найдены.")
+            print("Отели по заданным критериям не найдены.")
 
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка парсинга: {e}")
 
 def send_telegram(token, chat_id, text):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
