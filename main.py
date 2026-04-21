@@ -1,6 +1,6 @@
 import requests
+from bs4 import BeautifulSoup
 import os
-import re
 
 # НАСТРОЙКИ
 MAX_PRICE = 1000000 
@@ -11,33 +11,40 @@ def check_tours():
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
     try:
         response = requests.get(URL, headers=headers)
-        page_text = response.text
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Список для найденных туров
-        found_tours = []
+        # Ищем все текстовые блоки (на таких сайтах туры часто в блоках div или span)
+        found_items = []
+        
+        # Этот цикл ищет упоминание отелей и цен в тексте
+        # Мы ищем строки, где есть название страны и цифры цены
+        all_text = soup.get_text(separator='|', strip=True).split('|')
+        
+        current_hotel = ""
+        for text in all_text:
+            # Если текст похож на отель (обычно содержит звезды или слова Hotel/Resort)
+            if any(country in text for country in TARGET_COUNTRIES):
+                current_hotel = text
+            
+            # Если видим цену (цифры + тг/KZT) рядом с отелем
+            if ("тг" in text or "KZT" in text) and current_hotel:
+                # Очищаем цену от лишних символов, чтобы сравнить с лимитом
+                price_digits = ''.join(filter(str.isdigit, text))
+                if price_digits and int(price_digits) <= MAX_PRICE:
+                    found_items.append(f"🏨 {current_hotel}\n💰 Цена: {text}")
+                    current_hotel = "" # Сбрасываем для поиска следующего
 
-        # Упрощенный поиск: ищем блоки, где есть название страны и цена (цифры рядом с 'тг' или 'kZT')
-        # ВАЖНО: Эта логика зависит от того, как сайт отдает текст.
-        for country in TARGET_COUNTRIES:
-            if country.lower() in page_text.lower():
-                # Ищем отели (обычно они в кавычках или перед звездами ***)
-                # Пока сделаем универсальный вывод, если нашли страну
-                found_tours.append(f"🏨 Отель в направлении {country}\n💰 Цена: до {MAX_PRICE} тг")
-
-        if found_tours:
-            header = "🔔 **Найдены подходящие туры!**\n\n"
-            tours_list = "\n\n".join(found_tours)
-            footer = f"\n\n🔗 Проверить на сайте: {URL}"
-            send_telegram(token, chat_id, header + tours_list + footer)
+        if found_items:
+            message = "🌟 **Список найденных отелей:**\n\n" + "\n\n".join(found_items[:10])
+            message += f"\n\n🔗 Ссылка на подборку: {URL}"
+            send_telegram(token, chat_id, message)
         else:
-            # Если ничего не нашли, бот может промолчать или прислать отчет (для теста оставим отчет)
-            print("Туры не найдены")
+            # Если парсер не смог выделить отели, пришлем общую инфу как раньше
+            send_telegram(token, chat_id, f"✅ Туры найдены, но детальный список отелей не считался.\nПроверьте вручную: {URL}")
 
     except Exception as e:
         print(f"Ошибка: {e}")
