@@ -1,33 +1,24 @@
 import requests
 import os
 
-# НАСТРОЙКИ
-MAX_PRICE = 1000000 
-TARGET_COUNTRIES = ["Вьетнам", "Китай", "Турция"]
-URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62"
-
-def check_tours():
+def test_bot():
+    # Получаем данные из секретов GitHub
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    try:
-        response = requests.get(URL, headers=headers)
-        page_text = response.text.lower()
-        
-        # Ищем совпадения по странам
-        found = [c for c in TARGET_COUNTRIES if c.lower() in page_text]
-        
-        if found:
-            msg = f"🌟 **Найдены варианты!**\n\n🌍 Страны: {', '.join(found)}\n💰 Бюджет: до {MAX_PRICE} тг\n📍 Вылет: Астана/Алматы\n🔗 Ссылка: {URL}"
-            send_telegram(token, chat_id, msg)
-    except Exception as e:
-        print(f"Ошибка: {e}")
-
-def send_telegram(token, chat_id, text):
+    message = "🚀 Проверка связи! Если ты видишь это сообщение, значит:\n1. Токен бота верный.\n2. Chat ID верный.\n3. GitHub Actions работает!"
+    
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    payload = {"chat_id": chat_id, "text": message}
+    
+    try:
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            print("Успех! Сообщение отправлено.")
+        else:
+            print(f"Ошибка! Ответ сервера: {response.text}")
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
 
 if __name__ == "__main__":
-    check_tours()
+    test_bot()
