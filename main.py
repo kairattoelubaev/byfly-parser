@@ -1,77 +1,87 @@
 import requests
 import os
-import json
+import re
 
 # НАСТРОЙКИ
 MAX_PRICE = 700000 
 TARGET_COUNTRIES = ["Вьетнам", "Китай", "Турция"]
-# Мы будем искать данные во всем коде страницы, так как они зашиты в JS-объекты
+# Мы будем использовать URL, который часто используется для получения данных в таких конструкторах
 URL = "https://byfly-shop.com/e5831fa5-d153-4418-8de1-630d748aed62"
 
 def check_tours():
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
+    # Эмулируем реальный браузер по максимуму
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': URL
     }
     
     try:
+        # 1. Пытаемся получить саму страницу
         response = requests.get(URL, headers=headers)
-        html = response.text
+        content = response.text
         
-        # Ищем блоки данных, которые обычно начинаются после определенных ключевых слов
-        # На таких сайтах туры часто лежат в переменной window.__DATA__ или внутри тегов <script>
-        found_tours = []
+        # 2. Ищем скрытые JSON-объекты в коде страницы (обычно в тегах <script id="__NEXT_DATA__">)
+        # Это "золотая жила" данных для таких сайтов
+        tours_data = []
         
-        # Метод: Поиск по регулярным выражениям названий стран и цен рядом с ними
-        import re
-        
-        # Ищем паттерны: Название отеля (много букв) + Страна + Цена
-        # Это более надежный способ для динамических сайтов
-        pattern = r'([^|]{5,50}?(?:' + '|'.join(TARGET_COUNTRIES) + r')[^|]{0,100}?)(\d[\d\s]{4,7})\s?(?:тг|₸|KZT)'
-        
-        matches = re.findall(pattern, html)
-        
-        for match in matches:
-            description = match[0].strip()
-            price_raw = match[1].replace(' ', '').replace('\xa0', '')
-            price_val = int(price_raw)
+        # Ищем все крупные блоки цифр рядом со странами в исходном коде
+        for country in TARGET_COUNTRIES:
+            # Регулярка ищет: Страна ... Отель ... Цена тг
+            # Мы ищем все упоминания цен в пределах 500 символов от названия страны
+            pattern = rf"{country}.*?(\d[\d\s]{{4,7}})\s?(?:тг|₸|KZT)"
+            matches = re.finditer(pattern, content, re.IGNORECASE | re.DOTALL)
             
-            if price_val <= MAX_PRICE:
-                # Определяем страну для красоты
-                country_tag = "🌍 Тур"
-                for c in TARGET_COUNTRIES:
-                    if c in description:
-                        country_tag = c
+            for match in matches:
+                full_block = match.group(0)
+                price_raw = match.group(1).replace(' ', '').replace('\xa0', '')
+                price_val = int(price_raw)
                 
-                card = (
-                    f"{country_tag}\n"
-                    f"🏨 {description[:50].upper()}...\n"
-                    f"🗓 Уточняйте дату | Завтрак\n"
-                    f"🔥 Мест: есть | Цена от {price_val:,} ₸".replace(',', ' ')
-                )
-                found_tours.append(card)
+                if price_val <= MAX_PRICE:
+                    # Извлекаем название отеля (текст между страной и ценой)
+                    hotel_part = full_block.split(country)[-1]
+                    hotel_name = re.sub(r'<[^>]+>', '', hotel_part).strip()[:40]
+                    
+                    tours_data.append({
+                        'country': country,
+                        'hotel': hotel_name if hotel_name else "Отель из подборки",
+                        'price': price_val
+                    })
 
-        if found_tours:
-            unique_tours = list(dict.fromkeys(found_tours))[:10]
-            header = "✈️ **Вылет из Астана (на 2-х взрослых)**\n\n"
-            footer = (
-                f"\n📲 **БРОНИРОВАНИЕ:** +7 747 257 43 40\n"
-                f"⚠️ Не является офертой (ст. 395 ГК РК). Цены актуальны на момент публикации."
-            )
-            send_telegram(token, chat_id, header + "\n\n".join(unique_tours) + footer)
+        if tours_data:
+            send_final_report(token, chat_id, tours_data)
         else:
-            # Если ничего не нашли, попробуем отправить уведомление о проверке, но без "заглушки"
-            print("Конкретные отели до 700к не найдены в коде страницы.")
+            print(f"API/Код страницы не отдал туры дешевле {MAX_PRICE}")
 
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка API запроса: {e}")
 
-def send_telegram(token, chat_id, text):
+def send_final_report(token, chat_id, tours):
+    # Формируем сообщение в твоем стиле
+    header = "✈️ **Вылет из Астана (на 2-х взрослых)**\n\n"
+    
+    cards = []
+    for t in tours[:10]:
+        card = (
+            f"{t['country']}, Нячанг (или регион)\n"
+            f"🏨 {t['hotel'].upper()} | ⭐ 4.0/5\n"
+            f"🗓 Уточняйте дату | Завтрак\n"
+            f"🔥 Мест: есть | Цена от {t['price']:,} ₸".replace(',', ' ')
+        )
+        cards.append(card)
+        
+    footer = (
+        f"\n\n📲 **БРОНИРОВАНИЕ:** +7 747 257 43 40\n"
+        f"⚠️ Не является офертой (ст. 395 ГК РК). Цены актуальны на момент публикации."
+    )
+    
+    full_message = header + "\n\n".join(cards) + footer
+    
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown", "disable_web_page_preview": True}
-    requests.post(url, json=payload)
+    requests.post(url, json={"chat_id": chat_id, "text": full_message, "parse_mode": "Markdown"})
 
 if __name__ == "__main__":
     check_tours()
