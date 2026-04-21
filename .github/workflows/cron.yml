@@ -2,7 +2,7 @@ name: Tour Monitor
 
 on:
   schedule:
-    - cron: '0 6,10,14,18 * * *'
+    - cron: '0 */2 * * *' # Запуск каждые 2 часа
   workflow_dispatch:
 
 jobs:
